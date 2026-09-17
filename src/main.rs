@@ -59,10 +59,19 @@ fn main() {
 
     let pack = pack_create::Pack::new(Rc::new(active_cube));
 
+    let mut clone_vec: Vec<usize> = Vec::new();
+    for selected_card in pack.selected_cards.clone() {
+        let card_number = selected_card.card.number;
+        if clone_vec.contains(&card_number) {
+            println!("Possible double card added, {}.", card_number);
+        }
+        clone_vec.push(card_number);
+    }
+
     pack.selected_cards
         .iter()
         .enumerate()
         .for_each(|(index, card)| {
-            println!("Slot {}: \t{}", index + 1, card);
+            println!("Slot {}: {}", index + 1, card);
         });
 }

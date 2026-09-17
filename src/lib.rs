@@ -5,11 +5,13 @@ use serde::Deserialize;
 
 use rand::{RngExt, seq::IndexedRandom};
 
+use crate::VariantKind::{AltArt, Foil};
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct Card {
     #[serde(rename = "Card #")]
-    number: usize,
+    pub number: usize,
 
     #[serde(rename = "Card Name")]
     name: String,
@@ -36,8 +38,11 @@ impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[Card Number: {},\t\tName: {},\t\t\t\tRarity: {}, Base: {:?}]",
-            self.number, self.name, self.rarirty_type, self.base
+            "[Card Number: {number:<5}, Name: {name:<40}, Rarity: {rarity:<40}, Base: {base:<20}]",
+            number = self.number,
+            name = self.name,
+            rarity = self.rarirty_type,
+            base = self.base
         )
     }
 }
@@ -50,10 +55,32 @@ pub enum CardBaseKind {
     Unknown,
 }
 
+impl fmt::Display for CardBaseKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let base = match self {
+            CardBaseKind::Land => "Land",
+            CardBaseKind::Unknown => "Unknown",
+        };
+
+        write!(f, "{base}")
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum VariantKind {
     Foil,
     AltArt,
+}
+
+impl fmt::Display for VariantKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let base = match self {
+            VariantKind::Foil => "Foil",
+            VariantKind::AltArt => "Alt-Art",
+        };
+
+        write!(f, "{base}")
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -74,7 +101,7 @@ impl VariantOption {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct SelectedCard {
     variants: Vec<VariantKind>,
-    card: Rc<Card>,
+    pub card: Rc<Card>,
 }
 
 impl SelectedCard {
@@ -88,10 +115,24 @@ impl SelectedCard {
 
 impl fmt::Display for SelectedCard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut variant_str = "[".to_owned();
+        variant_str.push_str(
+            &self
+                .variants
+                .clone()
+                .into_iter()
+                .map(|variant| match variant {
+                    Foil => "Foil ",
+                    AltArt => "Alt-Art ",
+                })
+                .collect::<String>(),
+        );
+        variant_str += "]";
+
         write!(
             f,
-            "[ Special Tags {:?},\t\t\tCard Specifics {}]",
-            self.variants, self.card
+            "[ Special Tags: {:<20}, \t\tCard Specifics {}]",
+            variant_str, self.card
         )
     }
 }
@@ -217,7 +258,7 @@ impl RarityPool {
 
 12 Rare or Mythic rare, 87.5% Rare, 12.5% Mythic Rare
 
-13 Basic Land
+13 Any Land card, 50% chance to be Common, 45% chance to be basic, %5 chance to be rare
 
 14 Foil wildcard - Any card from the set
 
@@ -230,7 +271,7 @@ pub struct Pack {
 
 impl Pack {
     pub fn new(active_cube: Rc<Cube>) -> Self {
-        let exlcuded_cards: RefCell<Vec<Rc<Card>>> = RefCell::new(Vec::new());
+        let exlcuded_cards: Rc<RefCell<Vec<Rc<Card>>>> = Rc::new(RefCell::new(Vec::new()));
 
         let mut rng: rand::rngs::SmallRng = rand::make_rng();
 
@@ -251,7 +292,7 @@ impl Pack {
         let slot_1: Rc<SelectedCard> = Rc::new(draw_card_from_active_set(
             &active_cube,
             fun_booster_variant_options.clone(),
-            None,
+            exlcuded_cards.clone(),
             common_rarities.clone(),
             None,
         ));
@@ -403,12 +444,12 @@ impl fmt::Display for Pack {
 pub fn draw_card_from_active_set(
     active_cube: &Cube,
     optional_variant_options: impl Into<Option<Vec<VariantOption>>>,
-    optional_excluded_cards: impl Into<Option<RefCell<Vec<Rc<Card>>>>>,
+    optional_excluded_cards: impl Into<Option<Rc<RefCell<Vec<Rc<Card>>>>>>,
     optional_card_rarities: impl Into<Option<Vec<CardRarityKind>>>,
     optional_bases: impl Into<Option<Vec<CardBaseKind>>>,
 ) -> SelectedCard {
     let rarities: Option<Vec<CardRarityKind>> = optional_card_rarities.into();
-    let excluded_cards: Option<RefCell<Vec<Rc<Card>>>> = optional_excluded_cards.into();
+    let excluded_cards: Option<Rc<RefCell<Vec<Rc<Card>>>>> = optional_excluded_cards.into();
     let variant_options: Option<Vec<VariantOption>> = optional_variant_options.into();
     let base_cards: Option<Vec<CardBaseKind>> = optional_bases.into();
 
@@ -432,9 +473,10 @@ pub fn draw_card_from_active_set(
     }
 
     // If excluded cards exists, they must be removed from the pool.
-    if let Some(mut excluded_cards) = excluded_cards.clone() {
+    if let Some(excluded_cards) = excluded_cards.clone() {
+        let excluded_cards = excluded_cards.borrow();
         // Convert to a hashset for quick lookup
-        let remove_set: HashSet<_> = excluded_cards.get_mut().iter().collect();
+        let remove_set: HashSet<_> = excluded_cards.iter().collect();
         // Keep the card if it doesnt exist in the list of cards to remove
         pool_set.retain(|card| !remove_set.contains(card));
     }
@@ -470,8 +512,9 @@ pub fn draw_card_from_active_set(
         .choose(&mut rng)
         .expect("Unable to choose card via draw.");
 
-    if let Some(mut excluded_cards) = excluded_cards {
-        excluded_cards.get_mut().push(chosen_card.clone());
+    if let Some(excluded_cards) = excluded_cards {
+        let mut excluded_cards = excluded_cards.borrow_mut();
+        excluded_cards.push(chosen_card.clone());
     }
 
     SelectedCard::new(variants, chosen_card.clone())

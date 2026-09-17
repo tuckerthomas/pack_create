@@ -1,57 +1,63 @@
-Overview:
+# pack_create
 
-14 Slots using the following categories:
+Rust CLI that generates a random 14-card booster pack from a cube defined in a CSV file.
 
-#1-6 	6 	Common 	
+## Pack layout (current implementation — 14 slots)
 
-#7 	1 	Common or The List[5]:
--    98.5% chance of a common from the set
--   1.5% chance of a Special Guest card
+| Slot | Draw | Notes |
+| ---- | ---- | ----- |
+| 1–6  | Common | |
+| 7    | Common | Spec'd 1.5% Special Guest roll not implemented |
+| 8–10 | Uncommon | |
+| 11   | Any card | Uses fun-booster variants (1.5% foil chance); spec's "guaranteed non-foil" not honored |
+| 12   | 87.5% Rare / 12.5% Mythic | |
+| 13   | Land; 50% Common / 44% Basic / 6% Rare | Roll ranges: 1–50 → Common, 51–94 → Basic, 95–100 → Rare. Panics if no lands of the rolled rarity exist |
+| 14   | Any card, foil guaranteed | Plus independent 1.5% alt-art roll |
 
-#8-10 	3 	Uncommon 	
+A 15th category (token/art card/play aide, 65%/30%/5%) exists in the original spec but is not implemented; the pack array is fixed at 14.
 
-#11 	1 	Non-foil Wildcard 	A card of any rarity from the set. Guaranteed to be non-foil.
+## Variants
 
-#12 	1 	Rare or Mythic Rare:
--    87.5% chance of a rare
--   12.5% chance of a mythic rare
+Each drawn card independently rolls each variant option for its slot:
 
-#13 	1 	Basic land 	In sets with no basic lands, this will be a common land.
+- **Fun-booster slots** (1–11, 13): 1.5% foil, 1.5% alt-art — a card can get both
+- **Slot 14**: 100% foil, 1.5% alt-art
 
-#14 	1 	Foil Wildcard 	A card of any rarity from the set. Guaranteed to be foil.
+## Duplicate prevention
 
-#15 	1 	Token, art card, play aide 	Non-playable card, excluded for draft.:
--    65% – Token/Helper card
--   30% – Art card
--    5% – Art card with signature
+Every drawn card is appended to a shared exclusion list; subsequent draws filter it out using card identity (number, name, rarity, and type all equal). No two slots can hold the same card. (A legacy debug print in `main.rs` warns on duplicate card numbers but is unreachable.)
 
-Eventual Nice to Haves:
-- Seeded packs
-- CSV/Table input
-- Web interface
-- Fun name?
+## Input
 
-Input:
-Set is a newline seperation of each instance of card: "[Quantity] [Card Name]\n"
-- Since these cards are custom, we cannot use external data for creation, we also need to know their rarity
+CSV file path, required, via `--path` / `-p`. Columns:
 
-Output:
-A setlist for the specific pack
+| Column | Values |
+| ------ | ------ |
+| `Card #` | Integer |
+| `Card Name` | String |
+| `Card Rarity` | `Basic` \| `Common` \| `Uncommon` \| `Rare` \| `Mythic` |
+| `Card Type` | `Land` or empty (→ `Unknown`) |
 
-Logic:
+Panics (no row detail) on: missing file, malformed row, and empty draw pools (e.g., a cube with no uncommons panics on slots 8–10; a cube with no rares panics on slot 12). There is no up-front set validation.
 
-1. Collect the distribution and pool of cards from user
+## Output
 
-2. Validate the set
+One line per slot: `Slot {n}: {variant tags} {card details}`.
 
-3. Begin card logic by creating a pack:
-- For each category above:
-    - Draw for the card from the rarity pool
-    - Determine if a copy of the card has already been selected
-    - Add it to the pack
-- end after each category has been picked from
+Debug builds additionally print per-rarity counts and the slot 13 roll.
 
+## Pipeline
+
+1. Parse CSV → cards
+2. Build cube: card list + per-rarity pools
+3. Draw 14 slots in order (exclusion list prevents duplicates)
 4. Print the pack
 
-Assumptions:
-- Some categories have specific logic, but we're excluding that for now.
+## Not implemented / future
+
+- **Slot 7**: 1.5% Special Guest card (definition needed)
+- **Slot 13**: basic land with fallback to common land when no basics exist
+- **Slot 15**: token/art card/play aide (65% token, 30% art, 5% signed art)
+- Seeded packs
+- CSV/table input improvements (better error reporting)
+- Web interface
